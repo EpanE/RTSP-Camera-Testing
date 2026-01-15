@@ -1,0 +1,8 @@
+# Virtual Environments
+venv/
+env/
+.venv/
+
+# Folder
+captures/
+runs/

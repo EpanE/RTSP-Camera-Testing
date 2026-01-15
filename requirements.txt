@@ -1,0 +1,7 @@
+opencv-python
+ultralytics
+mediapipe==0.10.11
+pynput 
+numpy
+pycaw 
+comtypes
