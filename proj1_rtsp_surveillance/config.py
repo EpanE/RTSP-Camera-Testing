@@ -1,9 +1,17 @@
 # config.py
 
-# ===================== RTSP CONFIG =====================
-USER = "admin"
-PASS = ""
-IP = "192.168.0.27"
+# ===================== RTSP IPC CONFIG =====================
+#USER = "admin"
+#PASS = ""
+#IP = "192.168.0.27"
+#PORT = 554
+#RTSP_URL = f"rtsp://{USER}:{PASS}@{IP}:{PORT}/Streaming/Channels/101"
+
+# ===================== RTSP C520WS CONFIG =====================
+
+USER = "Robomy"
+PASS = "Patent15051%25"
+IP = "192.168.0.9"
 PORT = 554
 RTSP_URL = f"rtsp://{USER}:{PASS}@{IP}:{PORT}/Streaming/Channels/101"
 
