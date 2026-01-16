@@ -7,3 +7,5 @@ env/
 captures/
 runs/
 videos from testing/
+**/__pycache__/
+proj1_rtsp_surveillance/snapshots/
