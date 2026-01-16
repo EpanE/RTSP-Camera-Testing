@@ -3,7 +3,7 @@ import json
 import os
 
 # Path to save the zone coordinates
-ZONE_FILE = "zone_config.json"
+ZONE_FILE = "proj1_rtsp_surveillance/zone_config.json"
 
 # ===================== RTSP IPC CONFIG =====================
 #USER = "admin"
@@ -21,7 +21,7 @@ PORT = 554
 RTSP_URL = f"rtsp://{USER}:{PASS}@{IP}:{PORT}/stream1"
 
 # ===================== AI CONFIG =====================
-PERSON_MODEL_PATH = "yolov8n.pt"
+PERSON_MODEL_PATH = "proj1_rtsp_surveillance/yolov8n.pt"
 CONFIDENCE_THRESHOLD = 0.35
 DEVICE = 0
 
