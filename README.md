@@ -18,6 +18,10 @@ This repository is a personal sandbox for testing and exploring an RTSP camera i
    pip install -r requirements.txt
    ```
 
+   or 
+
+   Run the venv_create.bat (if you have python version 3.11)
+
 2. Update any script with your RTSP URL, then run the script you want to test:
 
    ```bash
