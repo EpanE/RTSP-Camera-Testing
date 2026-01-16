@@ -9,3 +9,4 @@ runs/
 videos from testing/
 **/__pycache__/
 proj1_rtsp_surveillance/snapshots/
+proj1_rtsp_surveillance/logs/
