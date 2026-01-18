@@ -2,8 +2,7 @@
 import json
 import os
 
-# Path to save the zone coordinates
-ZONE_FILE = "proj1_rtsp_surveillance/zone_config.json"
+ZONE_FILE = "zone_config.json"
 
 # ===================== RTSP IPC CONFIG =====================
 #USER = "admin"
@@ -20,8 +19,12 @@ IP = "192.168.0.9"
 PORT = 554
 RTSP_URL = f"rtsp://{USER}:{PASS}@{IP}:{PORT}/stream1"
 
+# ===================== FALLBACK CONFIG =====================
+# If RTSP fails, switch to this camera index (0 is usually the default webcam)
+FALLBACK_CAM_INDEX = 0
+
 # ===================== AI CONFIG =====================
-PERSON_MODEL_PATH = "proj1_rtsp_surveillance/yolov8n.pt"
+PERSON_MODEL_PATH = "yolov8n.pt"
 CONFIDENCE_THRESHOLD = 0.35
 DEVICE = 0
 
@@ -38,7 +41,6 @@ DEFAULT_ZONE = [
     [140, 450],
 ]
 
-# Load zone from file if it exists, otherwise use default
 def load_zone():
     if os.path.exists(ZONE_FILE):
         try:
@@ -50,7 +52,6 @@ def load_zone():
             print(f"⚠️ Error loading zone file: {e}. Using default.")
     return DEFAULT_ZONE
 
-# Save zone to file
 def save_zone(zone_points):
     try:
         with open(ZONE_FILE, "w") as f:
@@ -59,7 +60,6 @@ def save_zone(zone_points):
     except Exception as e:
         print(f"⚠️ Error saving zone file: {e}")
 
-# Initialize the global variable
 RESTRICTED_ZONE = load_zone()
 
 # ===================== UI =====================

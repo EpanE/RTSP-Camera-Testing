@@ -6,20 +6,32 @@ import config
 class RTSPStreamer:
     def __init__(self):
         self.cap = None
-        self.connect()
+        self.connect() # Initial connection attempt
         self.last_frame_time = time.time()
 
     def connect(self):
-        """Initialize or re-initialize the video capture."""
-        print(f"Connecting to {config.RTSP_URL}...")
+        """Attempts RTSP connection first, falls back to Local Webcam."""
+        
+        # 1. Attempt RTSP Connection
+        print(f"Attempting connection to RTSP: {config.RTSP_URL}")
         self.cap = cv2.VideoCapture(config.RTSP_URL, cv2.CAP_FFMPEG)
         
-        if not self.cap.isOpened():
-            raise RuntimeError("Failed to open RTSP stream. Check URL and network.")
+        if self.cap.isOpened():
+            print("✅ Connected to RTSP Stream.")
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            return
+
+        # 2. Fallback to Local Webcam if RTSP failed
+        print(f"⚠️ RTSP connection failed.")
+        print(f"🔄 Switching to Local Webcam (Index {config.FALLBACK_CAM_INDEX})...")
         
-        # Reduce buffering for lower latency
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        print("Connected.")
+        self.cap = cv2.VideoCapture(config.FALLBACK_CAM_INDEX)
+        
+        if self.cap.isOpened():
+            print("✅ Connected to Local Webcam.")
+        else:
+            # If both fail, stop the program
+            raise RuntimeError("Failed to connect to both RTSP and Local Webcam.")
 
     def read_frame(self):
         """
@@ -32,10 +44,10 @@ class RTSPStreamer:
         if not ok or frame is None:
             # Simple reconnect logic
             if time.time() - self.last_frame_time > 2.0:
-                print("Stream stalled. Reconnecting...")
+                print("Stream stalled. Attempting to reconnect...")
                 self.cap.release()
                 time.sleep(0.5)
-                self.connect()
+                self.connect() # This will now try RTSP then Webcam again
                 self.last_frame_time = time.time()
             return False, None
 
