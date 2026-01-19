@@ -5,3 +5,6 @@ pynput
 numpy
 pycaw 
 comtypes
+customtkinter 
+pillow
+#pip install --extra-index-url https://PySimpleGUI.net/install PySimpleGUI
