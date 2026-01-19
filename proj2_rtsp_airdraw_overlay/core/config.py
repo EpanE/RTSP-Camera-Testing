@@ -1,39 +1,33 @@
 import os
-from urllib.parse import quote
 from dotenv import load_dotenv
 
 # ===================== LOAD ENVIRONMENT =====================
-# This loads variables from the .env file in the project root
 load_dotenv()
 
 # ===================== RTSP CONFIG =====================
-# These values look for environment variables first. 
-# If not found, they fall back to the defaults defined below.
-
 USER = os.getenv("RTSP_USER", "")
 PASS = os.getenv("RTSP_PASS", "")
-IP = os.getenv("RTSP_IP", "")
-PORT = int(os.getenv("RTSP_PORT", ""))
-PATH = os.getenv("RTSP_PATH", "")
+IP = os.getenv("RTSP_IP", "127.0.0.1")
+PORT = int(os.getenv("RTSP_PORT", "554"))
+PATH = os.getenv("RTSP_PATH", "/stream1")
 
 def build_rtsp_url(user, password, ip, port, path):
     """
-    Constructs an RTSP URL with proper URL encoding for authentication.
-    This ensures special characters in passwords (like '@', ':', etc.) don't break the URL.
+    Constructs an RTSP URL.
+    REMOVED URL ENCODING: We send the password exactly as defined in .env
+    to prevent double-encoding issues that cause 401 errors.
     """
     if not path.startswith("/"):
         path = f"/{path}"
     
     auth = ""
     if user or password:
-        # Encode credentials to handle special characters
-        auth_user = quote(user, safe="")
-        auth_pass = quote(password, safe="")
-        auth = f"{auth_user}:{auth_pass}@"
+        # Send raw string - do not encode
+        auth = f"{user}:{password}@"
         
-    return f"rtsp://{auth}{ip}:{port}/{path}"
+    return f"rtsp://{auth}{ip}:{port}{path}"
 
-# If RTSP_URL is defined in .env, use it directly. Otherwise build it from parts.
+# Construct the final URL
 RTSP_URL = os.getenv("RTSP_URL") or build_rtsp_url(USER, PASS, IP, PORT, PATH)
 
 # ===================== DRAWING CONFIG =====================

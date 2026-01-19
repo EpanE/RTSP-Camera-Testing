@@ -2,12 +2,12 @@ import mediapipe as mp
 import cv2
 
 class HandTracker:
-    def __init__(self, min_detection_conf=0.6, min_tracking_conf=0.6, max_num_hands=1, model_complexity=1):
-        mp_hands = mp.solutions.hands
-        self.hands = mp_hands.Hands(
+    def __init__(self, min_detection_conf=0.6, min_tracking_conf=0.6):
+        # Create the Hands object
+        self.hands = mp.solutions.hands.Hands(
             static_image_mode=False,
-            max_num_hands=max_num_hands,
-            model_complexity=model_complexity,
+            max_num_hands=1,
+            model_complexity=1,
             min_detection_confidence=min_detection_conf,
             min_tracking_confidence=min_tracking_conf
         )
@@ -19,10 +19,8 @@ class HandTracker:
         return self.hands.process(rgb)
 
     def draw_landmarks(self, frame, hand_lms):
-        self.mp_draw.draw_landmarks(frame, hand_lms, self.hands.HAND_CONNECTIONS)
-
-    def close(self):
-        self.hands.close()
+        # FIX: Access HAND_CONNECTIONS from the module mp.solutions.hands, not self.hands instance
+        self.mp_draw.draw_landmarks(frame, hand_lms, mp.solutions.hands.HAND_CONNECTIONS)
 
     @staticmethod
     def get_finger_states(hand_lms, handedness_label):

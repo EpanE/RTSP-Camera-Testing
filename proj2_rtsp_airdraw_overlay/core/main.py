@@ -1,8 +1,8 @@
 import sys
 import os
+import time
 import cv2
 import numpy as np
-import time
 
 # ===================== PATH SETUP =====================
 # Get the directory where this script is located
@@ -13,7 +13,6 @@ project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Now we can import from other folders
 from core.config import *
 from modules.hand_tracker import HandTracker
 from modules.canvas_manager import CanvasManager
@@ -29,21 +28,25 @@ def put_hud(img, lines, start_y=40):
 
 def main():
     # ===================== INITIALIZATION =====================
+    
+    # Force RTSP to use TCP (More reliable than UDP for connection establishment)
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+    
+    # Debug: Print the URL to console so you can verify it
+    print(f"--- [DEBUG] Connecting to: {RTSP_URL} ---")
+
     cap = cv2.VideoCapture(RTSP_URL, cv2.CAP_FFMPEG)
+    
     if not cap.isOpened():
-        raise RuntimeError("Failed to open RTSP stream. Check URL/creds/path.")
+        print("--- [ERROR] Connection failed. Check your network, IP, or credentials. ---")
+        raise RuntimeError("Failed to open RTSP stream.")
     
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     cv2.namedWindow("RTSP AirDraw (Overlay)", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("RTSP AirDraw (Overlay)", 1100, 650)
 
-    tracker = HandTracker(
-        MIN_DETECTION_CONFIDENCE,
-        MIN_TRACKING_CONFIDENCE,
-        max_num_hands=MAX_NUM_HANDS,
-        model_complexity=MODEL_COMPLEXITY
-    )
+    tracker = HandTracker(MIN_DETECTION_CONFIDENCE, MIN_TRACKING_CONFIDENCE)
     canvas_mgr = CanvasManager()
     fps_counter = FPSCounter()
     fps_counter.start()
@@ -56,7 +59,6 @@ def main():
     smoothed_pt = None
 
     last_frame_time = time.time()
-    last_reconnect_attempt = 0.0
 
     try:
         while True:
@@ -64,16 +66,14 @@ def main():
             ok, frame = cap.read()
             if not ok or frame is None:
                 # Reconnect logic
-                now = time.time()
-                if now - last_frame_time > 2.0 and now - last_reconnect_attempt > 1.0:
+                if time.time() - last_frame_time > 2.0:
                     print("Frame read failed. Reconnecting RTSP...")
-                    last_reconnect_attempt = now
                     cap.release()
                     time.sleep(0.5)
+                    # Re-enforce TCP transport on reconnect attempt
+                    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
                     cap = cv2.VideoCapture(RTSP_URL, cv2.CAP_FFMPEG)
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                    if not cap.isOpened():
-                        time.sleep(0.5)
                     last_frame_time = time.time()
                 continue
             
@@ -174,7 +174,6 @@ def main():
 
     finally:
         cap.release()
-        tracker.close()
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
