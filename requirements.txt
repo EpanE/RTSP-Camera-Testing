@@ -7,4 +7,5 @@ pycaw
 comtypes
 customtkinter 
 pillow
+python-dotenv
 #pip install --extra-index-url https://PySimpleGUI.net/install PySimpleGUI
