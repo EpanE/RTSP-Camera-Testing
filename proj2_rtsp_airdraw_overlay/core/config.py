@@ -1,17 +1,27 @@
-# ===================== RTSP IPC CONFIG =====================
-#USER = "admin"
-#PASS = ""
-#IP = "192.168.0.27"
-#PORT = 554
-#RTSP_URL = f"rtsp://{USER}:{PASS}@{IP}:{PORT}/Streaming/Channels/101"
+import os
+from urllib.parse import quote
 
-# ===================== RTSP C520WS CONFIG =====================
+# ===================== RTSP CONFIG =====================
+# Provide values via environment variables or edit defaults below.
+# If RTSP_URL is set explicitly, it overrides the individual parts.
 
-USER = "Robomy"
-PASS = "Patent15051%25"
-IP = "192.168.0.9"
-PORT = 554
-RTSP_URL = f"rtsp://{USER}:{PASS}@{IP}:{PORT}/stream1"
+USER = os.getenv("RTSP_USER", "")
+PASS = os.getenv("RTSP_PASS", "")
+IP = os.getenv("RTSP_IP", "127.0.0.1")
+PORT = int(os.getenv("RTSP_PORT", "554"))
+PATH = os.getenv("RTSP_PATH", "/stream1")
+
+def build_rtsp_url(user, password, ip, port, path):
+    if not path.startswith("/"):
+        path = f"/{path}"
+    auth = ""
+    if user or password:
+        auth_user = quote(user, safe="")
+        auth_pass = quote(password, safe="")
+        auth = f"{auth_user}:{auth_pass}@"
+    return f"rtsp://{auth}{ip}:{port}{path}"
+
+RTSP_URL = os.getenv("RTSP_URL") or build_rtsp_url(USER, PASS, IP, PORT, PATH)
 
 # ===================== DRAWING CONFIG =====================
 BRUSH_THICKNESS = 6

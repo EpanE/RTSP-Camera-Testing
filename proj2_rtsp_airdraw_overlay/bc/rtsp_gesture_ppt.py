@@ -1,7 +1,10 @@
+import os
 import time
+from collections import deque
+from urllib.parse import quote
+
 import cv2
 import numpy as np
-from collections import deque
 
 import mediapipe as mp
 from pynput.keyboard import Controller, Key
@@ -50,11 +53,23 @@ from pynput.keyboard import Controller, Key
 """
 
 # ===================== RTSP CONFIG =====================
-USER = "admin"
-PASS = ""               # set if needed
-IP   = "192.168.0.27"
-PORT = 554
-RTSP_URL = f"rtsp://{USER}:{PASS}@{IP}:{PORT}/ch01"
+USER = os.getenv("RTSP_USER", "")
+PASS = os.getenv("RTSP_PASS", "")
+IP = os.getenv("RTSP_IP", "127.0.0.1")
+PORT = int(os.getenv("RTSP_PORT", "554"))
+PATH = os.getenv("RTSP_PATH", "/ch01")
+
+def build_rtsp_url(user, password, ip, port, path):
+    if not path.startswith("/"):
+        path = f"/{path}"
+    auth = ""
+    if user or password:
+        auth_user = quote(user, safe="")
+        auth_pass = quote(password, safe="")
+        auth = f"{auth_user}:{auth_pass}@"
+    return f"rtsp://{auth}{ip}:{port}{path}"
+
+RTSP_URL = os.getenv("RTSP_URL") or build_rtsp_url(USER, PASS, IP, PORT, PATH)
 
 # ===================== POWERPOINT KEY MAPPINGS =====================
 kbd = Controller()
