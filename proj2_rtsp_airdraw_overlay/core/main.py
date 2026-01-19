@@ -154,7 +154,7 @@ def main():
                 prev_draw_pt = None
                 smoothed_pt = None
 
-    finally:cls
+    finally:
         cap.release()
         cv2.destroyAllWindows()
 
