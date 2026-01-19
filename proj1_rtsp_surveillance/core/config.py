@@ -2,7 +2,8 @@
 import json
 import os
 
-ZONE_FILE = "zone_config.json"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ZONE_FILE = os.path.join(BASE_DIR, "zone_config.json")
 
 # ===================== RTSP IPC CONFIG =====================
 #USER = "admin"
@@ -24,7 +25,7 @@ RTSP_URL = f"rtsp://{USER}:{PASS}@{IP}:{PORT}/stream1"
 FALLBACK_CAM_INDEX = 0
 
 # ===================== AI CONFIG =====================
-PERSON_MODEL_PATH = "yolov8n.pt"
+PERSON_MODEL_PATH = os.path.join(BASE_DIR, "yolov8n.pt")
 CONFIDENCE_THRESHOLD = 0.35
 DEVICE = 0
 
