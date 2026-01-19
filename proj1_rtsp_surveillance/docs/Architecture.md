@@ -1,7 +1,6 @@
 # System Architecture — RTSP AI Surveillance System
 
-This document outlines the **software architecture** of the RTSP AI Surveillance System.  
-The project is built using a **modular, separation-of-concerns design**, ensuring that video streaming, AI inference, UI interaction, and utilities remain decoupled for maintainability and scalability.
+This document describes the architecture of the `proj1_rtsp_surveillance` prototype. The system uses a modular, separation-of-concerns design with dedicated threads for capture and AI inference, keeping the UI and rendering responsive.
 
 ---
 
@@ -13,62 +12,74 @@ The system follows a continuous cyclic workflow:
    Raw video frames are fetched from the RTSP source.
 
 2. **Processing**  
-   Frames are analyzed for human presence and facial regions.
+   Frames are analyzed for people, zone occupancy, and optional face blur.
 
 3. **Interaction**  
    User inputs (mouse and keyboard) dynamically modify system state.
 
 4. **Visualization**  
-   Processed frames, overlays, and performance statistics are rendered to the display.
+   Processed frames, overlays, and performance statistics are rendered to the display (OpenCV window or CustomTkinter GUI).
 
 ---
 
 ## 📁 Project Layout
 
 ```
-rtsp_surveillance/
-├── main.py                 # Entry point & main application loop
-├── config.py               # Global configuration & state persistence
-├── zone_config.json        # Saved restricted zone coordinates
+proj1_rtsp_surveillance/
+├── core/
+│   ├── main.py             # OpenCV UI entry point
+│   ├── gui_main.py         # CustomTkinter GUI entry point
+│   └── config.py           # Global configuration & zone persistence
 ├── modules/
 │   ├── __init__.py         # Module interface
-│   ├── streamer.py         # RTSP input handler
-│   ├── detector.py         # AI inference engine
-│   └── privacy.py          # Privacy / face blurring handler
-└── utils/
-    ├── __init__.py         # Utility interface
-    └── fps_counter.py      # Performance monitoring
+│   ├── producer.py         # Camera capture thread
+│   ├── consumer.py         # AI inference thread
+│   ├── detector.py         # YOLO inference logic
+│   ├── privacy.py          # Face blur helper
+│   └── logger.py           # Alert logging + snapshots
+├── utils/
+│   ├── __init__.py         # Utility interface
+│   └── fps_counter.py      # Performance monitoring
+├── zone_config.json        # Saved restricted zone coordinates
+└── yolov8n.pt              # Person detection model
 ```
 
 ---
 
 ## 🧠 File-by-File Architecture
 
-### 1. Root Level
+### 1. Core Entry Points
 
-#### `main.py`
+#### `core/main.py`
 **Role:** Orchestrator / Controller  
 
-The core runtime of the application. This file coordinates all system components without embedding heavy logic.
+The OpenCV-based runtime. This file coordinates system components and draws overlays without blocking on inference.
 
 **Responsibilities**
-- Initializes `RTSPStreamer`, `PersonDetector`, `PrivacyFilter`, and `FPSCounter`
-- Runs the infinite frame-by-frame event loop
+- Initializes `CameraProducer`, `AIConsumer`, `PrivacyFilter`, `FPSCounter`, and `AlertLogger`
+- Runs the frame-by-frame render loop
 - Handles keyboard input:
   - Toggle face blur
+  - Toggle zone visibility
   - Save zone configuration
   - Quit application
 - Handles mouse input:
   - Drag-and-drop polygon vertices
 - Renders:
-  - Bounding boxes
+  - Bounding boxes and IDs
   - Restricted zone overlays
-  - FPS and alert text
-- Binds `config.py` state to mouse callbacks
+  - Occupancy count, FPS, and alert text
 
 ---
 
-#### `config.py`
+#### `core/gui_main.py`
+**Role:** GUI Controller  
+
+CustomTkinter-based UI that mirrors `main.py` behavior while providing a control panel, occupancy count, and log preview.
+
+---
+
+#### `core/config.py`
 **Role:** Source of Truth  
 
 Centralizes all static configuration and persistence logic to avoid hardcoded values.
@@ -79,6 +90,7 @@ Centralizes all static configuration and persistence logic to avoid hardcoded va
   - Model path (`yolov8n.pt`)
   - Confidence thresholds
   - Input image size
+- Performance settings (frame skipping, half precision)
 - Persistence:
   - `load_zone()` and `save_zone()` methods
   - Reads and writes `zone_config.json`
@@ -91,26 +103,37 @@ Centralizes all static configuration and persistence logic to avoid hardcoded va
 #### `modules/__init__.py`
 **Role:** Package Interface  
 
-Exposes core classes (`RTSPStreamer`, `PersonDetector`, `PrivacyFilter`) for clean imports in `main.py`.
+Exposes core classes (`CameraProducer`, `AIConsumer`, `PrivacyFilter`, `AlertLogger`) for clean imports.
 
 ---
 
-#### `modules/streamer.py`
-**Role:** Input Abstraction  
+#### `modules/producer.py`
+**Role:** Input Thread  
 
-Encapsulates all RTSP stream handling complexity.
+Owns camera capture and reconnection logic.
 
 **Responsibilities**
 - Manages `cv2.VideoCapture`
-- Sets buffer size to `1` for low-latency streaming
-- Implements heartbeat monitoring
-- Automatically reconnects on stream failure
-- Exposes a simple `.read_frame()` interface
+- Falls back to the local webcam on RTSP failure
+- Continuously captures frames in a background thread
+- Provides the latest frame to the UI thread
+
+---
+
+#### `modules/consumer.py`
+**Role:** Inference Thread  
+
+Consumes frames from the producer and runs detection on a background thread.
+
+**Responsibilities**
+- Hosts the `PersonDetector` instance
+- Stores the latest detections for rendering
+- Keeps inference work off the UI thread
 
 ---
 
 #### `modules/detector.py`
-**Role:** Intelligence Layer  
+**Role:** Intelligence Layer
 
 Handles computationally intensive AI and geometric logic.
 
@@ -119,7 +142,7 @@ Handles computationally intensive AI and geometric logic.
 - Automatically assigns GPU or CPU
 - Implements frame skipping (`SKIP_EVERY_N`) for performance
 - Caches detection results to maintain visual continuity
-- Executes inference using `model.predict()`
+- Executes inference using `model.track()` for consistent IDs
 - Converts bounding boxes to center points
 - Uses `cv2.pointPolygonTest()` to detect restricted zone intrusion
 
@@ -135,6 +158,18 @@ Provides privacy protection independent of person detection.
 - Applies Gaussian blur to face regions
 - Includes boundary safety checks
 - Modifies frames in-place for efficiency
+
+---
+
+#### `modules/logger.py`
+**Role:** Alerting & Storage  
+
+Logs intrusion events and saves snapshot images for audits.
+
+**Responsibilities**
+- Manages `logs/` and `snapshots/` directories
+- Appends event rows to a CSV file
+- Saves frame captures when alerts trigger
 
 ---
 
@@ -162,17 +197,17 @@ Dedicated performance measurement utility.
 ## 🔄 Data Flow
 
 1. **Configuration Load**
-   - `main.py` starts
-   - Loads settings from `config.py`
+   - `core/main.py` or `core/gui_main.py` starts
+   - Loads settings from `core/config.py`
    - Restores zone data from `zone_config.json`
 
 2. **Stream Acquisition**
-   - `main.py` → `streamer.read_frame()`
-   - Returns frame or `None`
+   - `CameraProducer` captures frames
+   - UI thread pulls the latest frame from the producer
 
 3. **Inference Pipeline**
-   - `main.py` → `detector.detect(frame)`
-   - Detector checks frame skip logic
+   - `AIConsumer` pulls frames from the producer
+   - `PersonDetector` checks frame skip logic
    - Runs YOLO inference or returns cached results
    - Checks restricted zone intersection
 
@@ -181,11 +216,11 @@ Dedicated performance measurement utility.
    - Frame modified in-place
 
 5. **UI & Overlay**
-   - Draws bounding boxes and zone overlays
+   - Draws bounding boxes, zone overlays, and occupancy count
    - Updates FPS via `fps_counter.update()`
 
 6. **Display**
-   - Final frame rendered using `cv2.imshow()`
+   - Final frame rendered using `cv2.imshow()` or CustomTkinter
 
 7. **Interaction & Persistence**
    - Mouse drag updates `config.RESTRICTED_ZONE`
