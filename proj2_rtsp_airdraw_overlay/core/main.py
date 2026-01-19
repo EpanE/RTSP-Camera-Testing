@@ -1,11 +1,19 @@
 import sys
-import time
+import os
 import cv2
 import numpy as np
+import time
 
-# Add parent directory to path to allow imports if running script directly
-sys.path.append('..')
+# ===================== PATH SETUP =====================
+# Get the directory where this script is located
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the parent directory (the project root)
+project_root = os.path.dirname(current_dir)
+# Add the project root to Python's system path
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
+# Now we can import from other folders
 from core.config import *
 from modules.hand_tracker import HandTracker
 from modules.canvas_manager import CanvasManager
