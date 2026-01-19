@@ -1,8 +1,21 @@
-# main.py
+# core/main.py
+
+import sys
+import os
+
+# Get the directory where this script is located
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Get the parent directory (project root)
+parent_dir = os.path.dirname(current_dir)
+
+# Add the parent directory to Python's path so it can find 'utils' and 'modules'
+sys.path.append(parent_dir)
+
 import cv2
 import numpy as np
-import config
 import time
+import config
 from utils import FPSCounter
 from modules import RTSPStreamer, PersonDetector, PrivacyFilter, AlertLogger
 
@@ -45,7 +58,11 @@ def main():
     SNAPSHOT_COOLDOWN = 5.0
     last_snapshot_time = 0
 
-    print("System started. Object Tracking enabled.")
+    # ===================== OCCUPANCY STATE =====================
+    # A set to store IDs of people currently inside the zone
+    active_intruders = set()
+
+    print("System started. Occupancy Counting enabled.")
     print("Controls: [s]=Save Zone  [f]=Blur  [z]=Zone  [q]=Quit")
 
     while True:
@@ -55,41 +72,62 @@ def main():
 
         fps_counter.update()
         out = frame.copy()
-        
-        # Detect now returns (x1, y1, x2, y2, cf, inside, cx, cy, track_id)
         detections = detector.detect(out)
         
+        # 1. Identify all Track IDs currently visible in the frame
+        visible_ids = set()
+        
+        # Temporary set for this frame to update the main 'active_intruders' set
+        current_frame_intruders = set()
+        
         alert_triggered = False
-        intruders = []
+        intruders_log = [] # List of (id, conf) for logging
 
         for (x1, y1, x2, y2, cf, inside, cx, cy, t_id) in detections:
+            # Ignore -1 ID (uninitialized tracks) for occupancy counting to avoid noise
+            if t_id != -1:
+                visible_ids.add(t_id)
+            
             if inside:
                 alert_triggered = True
-                intruders.append((t_id, cf))
+                if t_id != -1:
+                    current_frame_intruders.add(t_id)
+                intruders_log.append((t_id, cf))
             
             color = (0, 0, 255) if inside else (0, 255, 0)
-            
-            # Draw Box
             cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
             cv2.circle(out, (cx, cy), 4, color, -1)
             
-            # ===================== CHANGE: Display ID on screen =====================
-            label_text = f"ID:{t_id} {cf:.2f}"
+            label_text = f"ID:{t_id}" if t_id != -1 else "Unknown"
             cv2.putText(out, label_text, (x1, max(20, y1 - 8)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-        # ===================== ALERT LOGIC =====================
-        if alert_triggered:
-            cv2.putText(out, "ALERT: person in restricted zone", (20, 40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
+        # ===================== UPDATE OCCUPANCY STATE =====================
+        # Logic: 
+        # 1. Keep people who are active_intruders AND still visible in this frame.
+        # 2. Add people who are 'current_frame_intruders'.
+        # 3. Remove people who are NOT in 'visible_ids' (they left the scene).
+        
+        # Intersection: Keep only those who were inside AND are still seen anywhere on screen
+        active_intruders = active_intruders.intersection(visible_ids)
+        # Union: Add the new ones who just entered the zone
+        active_intruders = active_intruders.union(current_frame_intruders)
 
-            # 1. Log specific tracked IDs
-            for (tid, conf) in intruders:
-                # Use the unique ID (or "Unknown" if tracking hasn't locked on yet)
+        occupancy_count = len(active_intruders)
+
+        # ===================== ALERT LOGIC =====================
+        if alert_triggered or occupancy_count > 0:
+            # Visual Alert
+            color_alert = (0, 0, 255)
+            cv2.putText(out, "⚠️ ALERT: RESTRICTED ZONE ⚠️", (20, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, color_alert, 3)
+
+            # Log specific tracked IDs
+            for (tid, conf) in intruders_log:
                 event_id = f"ID:{tid}" if tid != -1 else "Unknown"
                 logger.log_event(event_id, conf, "Inside Zone")
 
-            # 2. Save Snapshot (Cooldown)
+            # Save Snapshot (Cooldown)
             current_time = time.time()
             if current_time - last_snapshot_time > SNAPSHOT_COOLDOWN:
                 logger.save_snapshot(out)
@@ -104,6 +142,15 @@ def main():
             for pt in pts:
                 cv2.circle(out, tuple(pt), radius, (0, 255, 0), -1)
 
+        # ===================== DRAW OCCUPANCY COUNTER =====================
+        # Display the count prominently
+        count_color = (0, 165, 255) # Orange
+        cv2.rectangle(out, (out.shape[1] - 200, 20), (out.shape[1] - 20, 90), count_color, -1)
+        cv2.putText(out, "INSIDE ZONE:", (out.shape[1] - 190, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(out, f"{occupancy_count}", (out.shape[1] - 190, 85),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
+
         if blur_faces:
             privacy_filter.apply_face_blur(out)
             cv2.putText(out, "FACE BLUR: ON", (20, 110),
@@ -111,15 +158,9 @@ def main():
 
         fps_counter.draw(out)
         
-        if alert_triggered:
-            help_text = "⚠️ ALERT ACTIVE ⚠️ | Tracking & Logging..."
-            text_color = (0, 0, 255)
-        else:
-            help_text = "Keys: [s]=Save Zone  [f]=Blur  [z]=Zone  [q]=Quit"
-            text_color = (255, 255, 255)
-            
+        help_text = "Keys: [s]=Save Zone  [f]=Blur  [z]=Zone  [q]=Quit"
         cv2.putText(out, help_text, (20, out.shape[0] - 20), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_color, 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         
         cv2.putText(out, f"Device: {config.DEVICE}", (20, out.shape[0] - 55),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 2)

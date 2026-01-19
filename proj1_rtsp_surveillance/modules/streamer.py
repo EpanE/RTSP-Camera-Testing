@@ -1,7 +1,7 @@
 # modules/streamer.py
 import cv2
 import time
-import config
+from core import config
 
 class RTSPStreamer:
     def __init__(self):

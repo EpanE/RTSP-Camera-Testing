@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import torch
 from ultralytics import YOLO
-import config
+from core import config
 
 class PersonDetector:
     def __init__(self):
