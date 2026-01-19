@@ -31,10 +31,21 @@ pip install -r requirements.txt
 ## Configuration
 
 Edit `core/config.py` to change:
-- RTSP credentials
-- IP address
+- RTSP defaults
 - Brush size
 - Gesture sensitivity
+
+Or supply RTSP settings via environment variables:
+
+```bash
+export RTSP_USER="admin"
+export RTSP_PASS="password"
+export RTSP_IP="192.168.0.27"
+export RTSP_PORT="554"
+export RTSP_PATH="/stream1"
+```
+
+You can also set `RTSP_URL` directly to override all fields.
 
 ---
 

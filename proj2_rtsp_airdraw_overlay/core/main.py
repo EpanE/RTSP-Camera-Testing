@@ -38,7 +38,12 @@ def main():
     cv2.namedWindow("RTSP AirDraw (Overlay)", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("RTSP AirDraw (Overlay)", 1100, 650)
 
-    tracker = HandTracker(MIN_DETECTION_CONFIDENCE, MIN_TRACKING_CONFIDENCE)
+    tracker = HandTracker(
+        MIN_DETECTION_CONFIDENCE,
+        MIN_TRACKING_CONFIDENCE,
+        max_num_hands=MAX_NUM_HANDS,
+        model_complexity=MODEL_COMPLEXITY
+    )
     canvas_mgr = CanvasManager()
     fps_counter = FPSCounter()
     fps_counter.start()
@@ -51,6 +56,7 @@ def main():
     smoothed_pt = None
 
     last_frame_time = time.time()
+    last_reconnect_attempt = 0.0
 
     try:
         while True:
@@ -58,12 +64,16 @@ def main():
             ok, frame = cap.read()
             if not ok or frame is None:
                 # Reconnect logic
-                if time.time() - last_frame_time > 2.0:
+                now = time.time()
+                if now - last_frame_time > 2.0 and now - last_reconnect_attempt > 1.0:
                     print("Frame read failed. Reconnecting RTSP...")
+                    last_reconnect_attempt = now
                     cap.release()
                     time.sleep(0.5)
                     cap = cv2.VideoCapture(RTSP_URL, cv2.CAP_FFMPEG)
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    if not cap.isOpened():
+                        time.sleep(0.5)
                     last_frame_time = time.time()
                 continue
             
@@ -164,6 +174,7 @@ def main():
 
     finally:
         cap.release()
+        tracker.close()
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
