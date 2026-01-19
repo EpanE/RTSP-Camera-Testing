@@ -7,8 +7,9 @@ from datetime import datetime
 class AlertLogger:
     def __init__(self):
         # Define directories
-        self.log_dir = "proj1_rtsp_surveillance/logs"
-        self.snapshots_dir = "proj1_rtsp_surveillance/snapshots"
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.log_dir = os.path.join(base_dir, "logs")
+        self.snapshots_dir = os.path.join(base_dir, "snapshots")
         
         # Create directories if they don't exist
         os.makedirs(self.log_dir, exist_ok=True)
