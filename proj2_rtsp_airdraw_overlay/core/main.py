@@ -17,31 +17,31 @@ from core.config import *
 from modules.hand_tracker import HandTracker
 from modules.canvas_manager import CanvasManager
 from utils.fps import FPSCounter
+from utils.capture_thread import VideoCaptureThreaded  # Import the threaded class
 
 def put_hud(img, lines, start_y=40):
     """Helper to put multiple lines of text on screen."""
     y = start_y
     for i, line in enumerate(lines):
-        # Slight color variation or logic can be added here
         cv2.putText(img, line, (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (255, 255, 255), 2)
         y += 35
 
 def main():
     # ===================== INITIALIZATION =====================
     
-    # Force RTSP to use TCP (More reliable than UDP for connection establishment)
+    # Force TCP transport globally (redundant safety, thread also sets it)
     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
     
-    # Debug: Print the URL to console so you can verify it
+    # Debug: Print the URL to console
     print(f"--- [DEBUG] Connecting to: {RTSP_URL} ---")
 
-    cap = cv2.VideoCapture(RTSP_URL, cv2.CAP_FFMPEG)
+    # Initialize the threaded video capture
+    video_thread = VideoCaptureThreaded(RTSP_URL)
+    video_thread.start()
     
-    if not cap.isOpened():
-        print("--- [ERROR] Connection failed. Check your network, IP, or credentials. ---")
-        raise RuntimeError("Failed to open RTSP stream.")
-    
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    # Give the thread a moment to connect before we start processing
+    print("Waiting for stream to initialize...")
+    time.sleep(2.0)
 
     cv2.namedWindow("RTSP AirDraw (Overlay)", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("RTSP AirDraw (Overlay)", 1100, 650)
@@ -58,26 +58,20 @@ def main():
     prev_draw_pt = None
     smoothed_pt = None
 
-    last_frame_time = time.time()
-
     try:
         while True:
-            # ===================== VIDEO CAPTURE =====================
-            ok, frame = cap.read()
-            if not ok or frame is None:
-                # Reconnect logic
-                if time.time() - last_frame_time > 2.0:
-                    print("Frame read failed. Reconnecting RTSP...")
-                    cap.release()
-                    time.sleep(0.5)
-                    # Re-enforce TCP transport on reconnect attempt
-                    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
-                    cap = cv2.VideoCapture(RTSP_URL, cv2.CAP_FFMPEG)
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                    last_frame_time = time.time()
+            # ===================== VIDEO CAPTURE (THREADED) =====================
+            # This call is now non-blocking. It returns the latest frame instantly
+            # or None if no frame is ready (e.g., during reconnection).
+            frame = video_thread.read()
+
+            # If frame is None, the thread is likely connecting/reconnecting.
+            # We just skip this loop iteration to keep the UI alive.
+            if frame is None:
+                cv2.waitKey(1)
                 continue
-            
-            last_frame_time = time.time()
+
+            # Update FPS counter
             fps_counter.update()
 
             h, w = frame.shape[:2]
@@ -173,7 +167,8 @@ def main():
                 smoothed_pt = None
 
     finally:
-        cap.release()
+        print("Stopping capture thread and closing window...")
+        video_thread.stop()  # Safely stop the background thread
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
