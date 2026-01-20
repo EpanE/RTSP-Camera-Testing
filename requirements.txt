@@ -8,4 +8,5 @@ comtypes
 customtkinter 
 pillow
 python-dotenv
+screen-brightness-control
 #pip install --extra-index-url https://PySimpleGUI.net/install PySimpleGUI

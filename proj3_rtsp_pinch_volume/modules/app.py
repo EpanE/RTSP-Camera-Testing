@@ -4,40 +4,70 @@ import numpy as np
 
 from core.config import Config
 from modules.audio_controller import AudioController
+from modules.brightness_controller import BrightnessController
 from modules.hand_processor import HandProcessor
 from modules.ui_manager import VolumeSliderUI
+from utils.video_thread import VideoCaptureThread
 
 class RTSPVolumeApp:
     def __init__(self, cfg: Config):
         self.cfg = cfg
+        
+        # Controllers
         self.audio = AudioController()
+        self.brightness = BrightnessController()
         self.hand_proc = HandProcessor()
         self.ui = VolumeSliderUI(cfg)
         
         # State
         self.pinching = False
-        self.smoothed_vol = self.audio.get_master_volume_scalar()
         self.last_frame_time = time.time()
         
-        # Video Capture
-        self.cap = cv2.VideoCapture(cfg.rtsp_url, cv2.CAP_FFMPEG)
-        if not self.cap.isOpened():
-            raise RuntimeError("Failed to open RTSP stream.")
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Smoothed values (0.0 - 1.0)
+        self.smoothed_vol = self.audio.get_master_volume_scalar()
+        self.smoothed_bright = self.brightness.get_brightness() / 100.0
+        
+        # ==========================================
+        # SOURCE DETECTION (RTSP vs WEBCAM)
+        # ==========================================
+        print(f"Attempting to connect to RTSP: {cfg.rtsp_url}")
+        
+        # Try to open RTSP stream
+        temp_cap = cv2.VideoCapture(cfg.rtsp_url, cv2.CAP_FFMPEG)
+        temp_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
+        connected = False
+        if temp_cap.isOpened():
+            # Try to read one frame to confirm actual stream data
+            ret, _ = temp_cap.read()
+            if ret:
+                connected = True
+        
+        temp_cap.release()
+
+        if connected:
+            self.active_source = cfg.rtsp_url
+            print("[SUCCESS] RTSP Stream connected.")
+        else:
+            self.active_source = 0  # 0 is usually the default laptop webcam
+            print("[WARNING] RTSP Connection failed. Falling back to Local Webcam (Source 0).")
+        # ==========================================
+
+        # Start Threaded Video Capture with the resolved source
+        self.video_thread = VideoCaptureThread(self.active_source).start()
 
         cv2.namedWindow("RTSP Pinch Volume", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("RTSP Pinch Volume", 1100, 650)
 
     def _get_frame(self):
-        """Reads frame with auto-reconnect logic."""
-        ok, frame = self.cap.read()
+        ok, frame = self.video_thread.read()
         if not ok or frame is None:
-            if time.time() - self.last_frame_time > 2.0:
-                print("Frame read failed. Reconnecting RTSP...")
-                self.cap.release()
-                time.sleep(0.5)
-                self.cap = cv2.VideoCapture(self.cfg.rtsp_url, cv2.CAP_FFMPEG)
-                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            # Auto reconnect logic is now handled via time comparison
+            # Note: If we started on Webcam, this will try to reconnect to Webcam. 
+            # If we started on RTSP, it tries RTSP.
+            if time.time() - self.last_frame_time > 3.0:
+                print("Stream timeout. Reconnecting...")
+                self.video_thread.reconnect()
                 self.last_frame_time = time.time()
             return None
         self.last_frame_time = time.time()
@@ -57,8 +87,7 @@ class RTSPVolumeApp:
                 hand_data, frame = self.hand_proc.process(frame)
                 
                 gesture = "NO HAND"
-                lane_ok = False
-                control_active = False
+                active_lane = None
 
                 # 2. Logic Update
                 if hand_data:
@@ -79,40 +108,75 @@ class RTSPVolumeApp:
                     elif self.pinching and dist > self.cfg.pinch_off_threshold:
                         self.pinching = False
 
-                    lane_ok = self.ui.is_in_lane(ix_px, iy_px)
-                    control_active = self.pinching and lane_ok
-
-                    # Volume Control
-                    if control_active:
-                        target_vol = self.ui.y_to_volume(iy_px)
-                        target_vol = self.ui.quantize(target_vol)
-                        
-                        # Smoothing
-                        self.smoothed_vol = (1 - self.cfg.vol_smooth_alpha) * self.smoothed_vol + \
-                                            self.cfg.vol_smooth_alpha * target_vol
-                        self.audio.set_master_volume_scalar(self.smoothed_vol)
-                    else:
-                        # Reset smoothing reference to actual hardware volume
-                        self.smoothed_vol = self.audio.get_master_volume_scalar()
+                    active_lane = self.ui.get_active_lane(ix_px, iy_px)
+                    control_active = self.pinching and active_lane is not None
 
                     # Update UI Strings
-                    gesture = f"PINCH={'ON' if self.pinching else 'OFF'}  dist={dist:.3f}  lane={'OK' if lane_ok else 'OUT'}"
+                    lane_str = active_lane if active_lane else "NONE"
+                    gesture = f"PINCH={'ON' if self.pinching else 'OFF'}  dist={dist:.3f}  lane={lane_str}"
                     
+                    # Control Logic
+                    if control_active:
+                        target_norm = self.ui.y_to_norm(iy_px)
+                        target_norm = self.ui.quantize(target_norm)
+                        
+                        if active_lane == 'VOLUME':
+                            self.smoothed_vol = (1 - self.cfg.smooth_alpha) * self.smoothed_vol + \
+                                                self.cfg.smooth_alpha * target_norm
+                            self.audio.set_master_volume_scalar(self.smoothed_vol)
+                        
+                        elif active_lane == 'BRIGHTNESS':
+                            self.smoothed_bright = (1 - self.cfg.smooth_alpha) * self.smoothed_bright + \
+                                                    self.cfg.smooth_alpha * target_norm
+                            # Convert back to 0-100 for the controller
+                            self.brightness.set_brightness(int(self.smoothed_bright * 100))
+                    
+                    else:
+                        # Reset smoothing references to reality to prevent jumps when re-entering lane
+                        self.smoothed_vol = self.audio.get_master_volume_scalar()
+                        self.smoothed_bright = self.brightness.get_brightness() / 100.0
+
                     # Visuals
                     self.ui.draw_finger_markers(frame, tx_px, ty_px, ix_px, iy_px)
                     
-                    # Draw Lane Guide if pinching
+                    # Draw Lane Guides if pinching
                     if self.pinching:
-                        color = (0, 255, 0) if lane_ok else (0, 0, 255)
-                        cv2.rectangle(frame, 
-                                      (self.cfg.slider_x - self.cfg.slider_pad_x, self.cfg.slider_y1),
-                                      (self.cfg.slider_x + self.cfg.slider_w + self.cfg.slider_pad_x, self.cfg.slider_y2),
-                                      color, 2)
+                        # Highlight active lane
+                        if active_lane == 'VOLUME':
+                            color = (0, 255, 0)
+                            x = self.cfg.vol_x
+                            w = self.cfg.vol_w
+                            pad = self.cfg.vol_pad_x
+                        elif active_lane == 'BRIGHTNESS':
+                            color = (0, 255, 255) # Cyan for Brightness
+                            x = self.cfg.bright_x
+                            w = self.cfg.bright_w
+                            pad = self.cfg.bright_pad_x
+                        else:
+                            color = (0, 0, 255)
+                            x, w, pad = 0,0,0 
+
+                        if x != 0:
+                            cv2.rectangle(frame, 
+                                          (x - pad, self.cfg.slider_y1),
+                                          (x + w + pad, self.cfg.slider_y2),
+                                          color, 2)
 
                 # 3. Draw UI
-                current_vol = self.audio.get_master_volume_scalar()
-                self.ui.draw_slider(frame, current_vol, control_active)
-                self.ui.draw_overlay(frame, int(current_vol * 100), gesture, 
+                # Volume Slider (Green base)
+                self.ui.draw_generic_slider(frame, self.cfg.vol_x, self.cfg.vol_w, 
+                                            self.smoothed_vol, "VOLUME", 
+                                            active_lane == 'VOLUME' and self.pinching, 
+                                            color=(0, 180, 255))
+                
+                # Brightness Slider (Orange base)
+                self.ui.draw_generic_slider(frame, self.cfg.bright_x, self.cfg.bright_w, 
+                                            self.smoothed_bright, "BRIGHTNESS", 
+                                            active_lane == 'BRIGHTNESS' and self.pinching, 
+                                            color=(0, 165, 255))
+
+                self.ui.draw_overlay(frame, int(self.smoothed_vol * 100), 
+                                     int(self.smoothed_bright * 100), gesture, 
                                      "MUTED" if self.audio.is_muted() else "UNMUTED")
 
                 cv2.imshow("RTSP Pinch Volume", frame)
@@ -128,6 +192,6 @@ class RTSPVolumeApp:
             self.cleanup()
 
     def cleanup(self):
-        self.cap.release()
+        self.video_thread.stop()
         cv2.destroyAllWindows()
         self.hand_proc.close()
