@@ -9,9 +9,9 @@ class VolumeSliderUI:
     def _to_pixel(self, norm_x: float, norm_y: float, w: int, h: int) -> Tuple[int, int]:
         return int(norm_x * w), int(norm_y * h)
 
-    def get_active_lane(self, x_px: int, y_px: int) -> Optional[str]:
+    def get_active_lane(self, x_px: int, y_px: int) -> str:
         """
-        Returns 'VOLUME', 'BRIGHTNESS', or None based on finger position.
+        Returns 'VOLUME', 'BRIGHTNESS', or 'MOUSE'.
         """
         # Check Volume Lane (Left)
         in_vol_x = (self.cfg.vol_x - self.cfg.vol_pad_x) <= x_px <= (self.cfg.vol_x + self.cfg.vol_w + self.cfg.vol_pad_x)
@@ -25,7 +25,12 @@ class VolumeSliderUI:
             return 'VOLUME'
         elif in_bright_x and in_y:
             return 'BRIGHTNESS'
-        return None
+        
+        # If we are vertically in the slider area, but horizontally not in the lanes -> Mouse Zone
+        if in_y:
+            return 'MOUSE'
+            
+        return 'NONE'
 
     def y_to_norm(self, y_px: int) -> float:
         """Convert pixel Y to 0.0-1.0 scalar."""
@@ -60,15 +65,23 @@ class VolumeSliderUI:
         text_y = self.cfg.slider_y1 - 15
         cv2.putText(img, label, (x_pos, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, fill_color, 2)
 
+    def draw_mouse_crosshair(self, img, ix_px, iy_px, is_active):
+        """Draws a visual indicator when in mouse mode"""
+        if is_active:
+            color = (0, 255, 255) # Cyan
+            # Crosshair
+            cv2.line(img, (ix_px - 20, iy_px), (ix_px + 20, iy_px), color, 2)
+            cv2.line(img, (ix_px, iy_px - 20), (ix_px, iy_px + 20), color, 2)
+            cv2.putText(img, "MOUSE MODE", (ix_px + 25, iy_px), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
     def draw_overlay(self, img, vol_percent, bright_percent, gesture_text, mute_state):
         from utils.drawing import draw_text
         
-        # Top Left Info
         draw_text(img, f"Vol: {vol_percent}%  |  Brt: {bright_percent}%", 20, 40, 0.9, 2)
         draw_text(img, gesture_text, 20, 80, 0.75, 2)
         
         h = img.shape[0]
-        draw_text(img, "Pinch in LEFT Lane for Vol | RIGHT Lane for Brightness. Keys: [m]=mute  [q]=quit",
+        draw_text(img, "L-Click: Pinch | Move: Index Finger | Keys: [m]=mute  [q]=quit",
                   20, h - 20, 0.65, 2)
 
     def draw_finger_markers(self, img, tx, ty, ix, iy):

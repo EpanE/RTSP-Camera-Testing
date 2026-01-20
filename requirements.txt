@@ -9,4 +9,5 @@ customtkinter
 pillow
 python-dotenv
 screen-brightness-control
+pyautogui
 #pip install --extra-index-url https://PySimpleGUI.net/install PySimpleGUI
